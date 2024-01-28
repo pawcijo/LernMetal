@@ -27,7 +27,8 @@ add_executable(MyApp
 				Src/main.cpp
 				Src/Renderer.cpp
 				Src/MyMTKViewDelegate.cpp
-				Src/MyAppDelegate.m)
+				Src/MyAppDelegate.m
+				Src/Shader.cpp)
 
 # Link App with libraries				
 target_link_libraries(MyApp
