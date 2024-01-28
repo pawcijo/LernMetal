@@ -17,10 +17,13 @@ private:
     MTL::Library *_pShaderLibrary;
     MTL::RenderPipelineState *_pPSO;
     MTL::Buffer *_pArgBuffer;
+   
     MTL::Buffer *_pVertexPositionsBuffer;
     MTL::Buffer *_pVertexColorsBuffer;
     MTL::Buffer *_pFrameData[3];
+   
     float _angle;
+    uint _current_range;
     int _frame;
     dispatch_semaphore_t _semaphore;
     static const int kMaxFramesInFlight;

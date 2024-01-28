@@ -1,11 +1,12 @@
 #include "Renderer.h"
 
+#include "Shader.h"
 
 #include <simd/simd.h>
 const int Renderer::kMaxFramesInFlight = 3;
 
 Renderer::Renderer(MTL::Device *pDevice)
-    : _pDevice(pDevice->retain()), _angle(0.f), _frame(0)
+    : _pDevice(pDevice->retain()), _angle(0.f), _frame(0), _current_range(0)
 {
     _pCommandQueue = _pDevice->newCommandQueue();
     buildShaders();
@@ -34,45 +35,12 @@ void Renderer::buildShaders()
 {
     using NS::StringEncoding::UTF8StringEncoding;
 
-    const char *shaderSrc = R"(
-        #include <metal_stdlib>
-        using namespace metal;
-
-        struct v2f
-        {
-            float4 position [[position]];
-            half3 color;
-        };
-
-        struct VertexData
-        {
-            device float3* positions [[id(0)]];
-            device float3* colors [[id(1)]];
-        };
-
-        struct FrameData
-        {
-            float angle;
-        };
-
-        v2f vertex vertexMain( device const VertexData* vertexData [[buffer(0)]], constant FrameData* frameData [[buffer(1)]], uint vertexId [[vertex_id]] )
-        {
-            float a = frameData->angle;
-            float3x3 rotationMatrix = float3x3( sin(a), cos(a), 0.0, cos(a), -sin(a), 0.0, 0.0, 0.0, 1.0 );
-            v2f o;
-            o.position = float4( rotationMatrix * vertexData->positions[ vertexId ], 1.0 );
-            o.color = half3((sin(a + vertexId*1.57)+1)/2,(cos(a+vertexId*1.57)+1)/2,(sin(2*a +vertexId*1.57)+1)/2);
-            return o;
-        }
-
-        half4 fragment fragmentMain( v2f in [[stage_in]] )
-        {
-            return half4( in.color, 1.0 );
-        }
-    )";
-
+    Shader shader("Shaders/Shader.metal");
     NS::Error *pError = nullptr;
-    MTL::Library *pLibrary = _pDevice->newLibrary(NS::String::string(shaderSrc, UTF8StringEncoding), nullptr, &pError);
+    MTL::Library *pLibrary = _pDevice->newLibrary(NS::String::string(shader.ShaderString().c_str(),
+                                                                     UTF8StringEncoding),
+                                                  nullptr,
+                                                  &pError);
     if (!pLibrary)
     {
         __builtin_printf("%s", pError->localizedDescription()->utf8String());
@@ -154,6 +122,7 @@ void Renderer::buildBuffers()
 struct FrameData
 {
     float angle;
+    uint current_range;
 };
 
 void Renderer::buildFrameData()
@@ -163,6 +132,11 @@ void Renderer::buildFrameData()
         _pFrameData[i] = _pDevice->newBuffer(sizeof(FrameData), MTL::ResourceStorageModeManaged);
     }
 }
+
+bool areEqual(float a, float b, float epsilon = 0.0005) {
+    return std::abs(a - b) < epsilon;
+}
+
 
 void Renderer::draw(MTK::View *pView)
 {
@@ -178,7 +152,34 @@ void Renderer::draw(MTK::View *pView)
       dispatch_semaphore_signal(pRenderer->_semaphore);
     });
 
-    reinterpret_cast<FrameData *>(pFrameDataBuffer->contents())->angle = (_angle += 0.01f);
+    // 0.01 per frame - 60 frames per second - 0.60 update per second
+    _angle += 0.005;    // add color and rotation speed here
+    if (_angle > 18.85) // 6pi
+    {
+        _angle = 0;
+    }
+
+    float pi_values[13] = {0, 1.57, 3.14,
+                           4.71, 6.28, 7.85,
+                           9.42, 11.00, 12.57,
+                           14.14, 15.71, 17.28, 18.85};
+
+    for (auto i = 0; i < 11; i++)
+    {
+        if (areEqual(pi_values[i],_angle))
+        {
+            _current_range += 1;
+
+            if (_current_range > 12)
+            {
+                _current_range = 0;
+            }
+        }
+    }
+
+    reinterpret_cast<FrameData *>(pFrameDataBuffer->contents())->angle = _angle;
+    reinterpret_cast<FrameData *>(pFrameDataBuffer->contents())->current_range = _current_range;
+
     pFrameDataBuffer->didModifyRange(NS::Range::Make(0, sizeof(FrameData)));
 
     MTL::RenderPassDescriptor *pRpd = pView->currentRenderPassDescriptor();
